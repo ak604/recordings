@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/navigation_record"
+        android:icon="@drawable/ic_record"
+        android:title="Record" />
+
+    <item
+        android:id="@+id/navigation_recordings"
+        android:icon="@drawable/ic_recordings"
+        android:title="Recordings" />
+
+    <item
+        android:id="@+id/navigation_templates"
+        android:icon="@drawable/ic_templates"
+        android:title="Templates" />
+
+    <item
+        android:id="@+id/navigation_profile"
+        android:icon="@drawable/ic_profile"
+        android:title="Profile" />
+</menu> 
