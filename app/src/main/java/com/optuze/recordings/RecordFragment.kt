@@ -11,29 +11,41 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import com.optuze.recordings.data.FileUploader
+import com.optuze.recordings.data.NetworkModule
+import com.optuze.recordings.data.SessionManager
+import com.optuze.recordings.data.api.S3Service
+import com.optuze.recordings.data.models.PresignedUrlResponse
 import com.optuze.recordings.databinding.FragmentRecordBinding
+import com.optuze.recordings.ui.templates.ProcessedTemplateFragment
 import com.optuze.recordings.ui.templates.TemplateSelectionDialog
+import com.optuze.recordings.ui.templates.TemplateSelectionListener
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.util.UUID
 
-class RecordFragment : Fragment() {
+class RecordFragment : Fragment(), TemplateSelectionListener {
     private var _binding: FragmentRecordBinding? = null
     private val binding get() = _binding!!
     
     private var mediaRecorder: MediaRecorder? = null
     private var isRecording = false
     private var outputFile: String? = null
+    private var presignedUrlResponse: PresignedUrlResponse? = null
+    
+    private lateinit var sessionManager: SessionManager
+    private lateinit var s3Service: S3Service
     
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            startRecording()
+            initiateRecording()
         } else {
             Toast.makeText(
                 requireContext(),
@@ -55,6 +67,9 @@ class RecordFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         
+        sessionManager = SessionManager(requireContext())
+        s3Service = NetworkModule.createS3Service(sessionManager)
+
         binding.btnRecord.setOnClickListener {
             if (isRecording) {
                 stopRecording()
@@ -70,7 +85,7 @@ class RecordFragment : Fragment() {
                 requireContext(),
                 Manifest.permission.RECORD_AUDIO
             ) == PackageManager.PERMISSION_GRANTED -> {
-                startRecording()
+                initiateRecording()
             }
             shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) -> {
                 Toast.makeText(
@@ -86,7 +101,48 @@ class RecordFragment : Fragment() {
         }
     }
     
-    private fun startRecording() {
+    private fun initiateRecording() {
+        binding.progressBar.visibility = View.VISIBLE
+        binding.btnRecord.isEnabled = false
+        
+        val callId = UUID.randomUUID().toString().take(8)
+        val fileName = "${callId}.mp3"
+        
+        Log.d(TAG, "Generated filename: $fileName with callId: $callId")
+        
+        // Get presigned URL
+        lifecycleScope.launch {
+            try {
+                val response = s3Service.getPresignedUrl(fileName, "audio/mp3")
+                
+                if (response.isSuccessful && response.body() != null) {
+                    presignedUrlResponse = response.body()
+                    Log.d(TAG, "Got presigned URL: ${presignedUrlResponse?.uploadURL}")
+                    startRecording(fileName, callId)
+                } else {
+                    Log.e(TAG, "Failed to get presigned URL: ${response.errorBody()?.string()}")
+                    Toast.makeText(
+                        requireContext(),
+                        "Failed to prepare recording",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    binding.progressBar.visibility = View.GONE
+                    binding.btnRecord.isEnabled = true
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error getting presigned URL", e)
+                Toast.makeText(
+                    requireContext(),
+                    "Error preparing recording: ${e.message}",
+                    Toast.LENGTH_SHORT
+                ).show()
+                binding.progressBar.visibility = View.GONE
+                binding.btnRecord.isEnabled = true
+            }
+        }
+    }
+    
+    private fun startRecording(fileName: String, callId: String) {
         try {
             // Create output file
             val recordingsDir = File(
@@ -97,8 +153,7 @@ class RecordFragment : Fragment() {
                 recordingsDir.mkdirs()
             }
             
-            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-            outputFile = "${recordingsDir.absolutePath}/recording_$timestamp.mp3"
+            outputFile = "${recordingsDir.absolutePath}/$fileName"
             
             // Initialize MediaRecorder
             mediaRecorder = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
@@ -120,7 +175,7 @@ class RecordFragment : Fragment() {
             isRecording = true
             updateUI()
             
-            Log.d(TAG, "Recording started: $outputFile")
+            Log.d(TAG, "Recording started: $outputFile with callId: $callId")
         } catch (e: IOException) {
             Log.e(TAG, "Failed to start recording", e)
             Toast.makeText(
@@ -128,6 +183,8 @@ class RecordFragment : Fragment() {
                 "Failed to start recording: ${e.message}",
                 Toast.LENGTH_SHORT
             ).show()
+            binding.progressBar.visibility = View.GONE
+            binding.btnRecord.isEnabled = true
         }
     }
     
@@ -143,8 +200,8 @@ class RecordFragment : Fragment() {
             
             Log.d(TAG, "Recording stopped: $outputFile")
             
-            // Show template selection dialog
-            showTemplateSelectionDialog()
+            // Upload the recorded file
+            uploadRecording()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to stop recording", e)
             Toast.makeText(
@@ -152,10 +209,69 @@ class RecordFragment : Fragment() {
                 "Failed to stop recording: ${e.message}",
                 Toast.LENGTH_SHORT
             ).show()
+            binding.progressBar.visibility = View.GONE
+        }
+    }
+    
+    private fun uploadRecording() {
+        val file = outputFile?.let { File(it) }
+        if (file != null && file.exists() && presignedUrlResponse != null) {
+            binding.tvRecordingStatus.text = "Uploading..."
+            binding.tvRecordingStatus.visibility = View.VISIBLE
+            binding.progressBar.visibility = View.VISIBLE
+            binding.btnRecord.isEnabled = false
+            
+            lifecycleScope.launch {
+                val uploadUrl = presignedUrlResponse?.uploadURL ?: ""
+                val success = FileUploader.uploadFile(file, uploadUrl)
+                
+                if (success) {
+                    Log.d(TAG, "File uploaded successfully")
+                    // Directly show template selection after upload
+                    showTemplateSelectionDialog(
+                        presignedUrlResponse?.fileName ?: "",
+                        extractCallId(presignedUrlResponse?.fileName ?: "")
+                    )
+                } else {
+                    Log.e(TAG, "Failed to upload file")
+                    Toast.makeText(
+                        requireContext(),
+                        "Failed to upload recording",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                
+                binding.tvRecordingStatus.visibility = View.GONE
+                binding.progressBar.visibility = View.GONE
+                binding.btnRecord.isEnabled = true
+            }
+        } else {
+            Log.e(TAG, "File does not exist or presigned URL is null")
+            Toast.makeText(
+                requireContext(),
+                "Error: Recording file not found",
+                Toast.LENGTH_SHORT
+            ).show()
+            binding.progressBar.visibility = View.GONE
+            binding.btnRecord.isEnabled = true
+        }
+    }
+    
+    private fun extractCallId(fileName: String): String {
+        // Extract the callId from the fileName
+        // Assuming format: packageId_userId_timestamp_callId.mp3
+        return try {
+            fileName.substringBeforeLast(".").split("_").last()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error extracting callId from fileName: $fileName", e)
+            UUID.randomUUID().toString().take(8) // Fallback to a new random ID
         }
     }
     
     private fun updateUI() {
+        binding.progressBar.visibility = View.GONE
+        binding.btnRecord.isEnabled = true
+        
         if (isRecording) {
             binding.btnRecord.setImageResource(R.drawable.ic_stop)
             binding.tvRecordingStatus.text = "Recording..."
@@ -166,9 +282,17 @@ class RecordFragment : Fragment() {
         }
     }
     
-    private fun showTemplateSelectionDialog() {
-        val dialog = TemplateSelectionDialog.newInstance(outputFile)
+    private fun showTemplateSelectionDialog(fileName: String, callId: String) {
+        val dialog = TemplateSelectionDialog.newInstance(fileName, callId)
         dialog.show(childFragmentManager, "TemplateSelectionDialog")
+    }
+    
+    private fun showErrorDialog(message: String) {
+        AlertDialog.Builder(requireContext())
+            .setTitle("Error")
+            .setMessage(message)
+            .setPositiveButton("OK") { dialog, _ -> dialog.dismiss() }
+            .show()
     }
     
     override fun onDestroyView() {
@@ -177,6 +301,15 @@ class RecordFragment : Fragment() {
             stopRecording()
         }
         _binding = null
+    }
+    
+    // Implement the callback method
+    override fun onTemplateProcessed(templateName: String, templateContent: String) {
+        val fragment = ProcessedTemplateFragment.newInstance(templateName, templateContent)
+        parentFragmentManager.beginTransaction()
+            .replace(R.id.fragment_container, fragment)
+            .addToBackStack("processed_template")
+            .commit()
     }
     
     companion object {

@@ -1,6 +1,8 @@
 package com.optuze.recordings.data
 
 import android.util.Log
+import com.optuze.recordings.data.api.S3Service
+import com.optuze.recordings.data.api.TemplateService
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -49,4 +51,17 @@ object NetworkModule {
             .addConverterFactory(GsonConverterFactory.create())
             .build()
     }
+
+    fun createS3Service(sessionManager: SessionManager): S3Service {
+        val client = createAuthenticatedClient(sessionManager)
+        val retrofit = createRetrofit(client)
+        return retrofit.create(S3Service::class.java)
+    }
+
+    fun createTemplateService(sessionManager: SessionManager): TemplateService {
+        val client = createAuthenticatedClient(sessionManager)
+        val retrofit = createRetrofit(client)
+        return retrofit.create(TemplateService::class.java)
+    }
+
 } 
