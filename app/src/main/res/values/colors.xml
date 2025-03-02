@@ -7,4 +7,11 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="template_memo">#FF9800</color>
+    <color name="template_summary">#4CAF50</color>
+    <color name="template_email_casual">#2196F3</color>
+    <color name="template_email_formal">#3F51B5</color>
+    <color name="template_twitter">#03A9F4</color>
+    <color name="template_linkedin">#0288D1</color>
+    <color name="template_blog">#9C27B0</color>
 </resources>
