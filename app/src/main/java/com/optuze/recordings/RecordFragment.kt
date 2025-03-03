@@ -24,9 +24,14 @@ import com.optuze.recordings.databinding.FragmentRecordBinding
 import com.optuze.recordings.ui.templates.ProcessedTemplateFragment
 import com.optuze.recordings.ui.templates.TemplateSelectionDialog
 import com.optuze.recordings.ui.templates.TemplateSelectionListener
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
 class RecordFragment : Fragment(), TemplateSelectionListener {
@@ -45,7 +50,7 @@ class RecordFragment : Fragment(), TemplateSelectionListener {
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            initiateRecording()
+            startRecording()
         } else {
             Toast.makeText(
                 requireContext(),
@@ -85,15 +90,10 @@ class RecordFragment : Fragment(), TemplateSelectionListener {
                 requireContext(),
                 Manifest.permission.RECORD_AUDIO
             ) == PackageManager.PERMISSION_GRANTED -> {
-                initiateRecording()
+                startRecording()
             }
             shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) -> {
-                Toast.makeText(
-                    requireContext(),
-                    "Audio recording permission is required",
-                    Toast.LENGTH_LONG
-                ).show()
-                requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                showPermissionRationale()
             }
             else -> {
                 requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -101,69 +101,21 @@ class RecordFragment : Fragment(), TemplateSelectionListener {
         }
     }
     
-    private fun initiateRecording() {
-        binding.progressBar.visibility = View.VISIBLE
-        binding.btnRecord.isEnabled = false
-        
-        val callId = UUID.randomUUID().toString().take(8)
-        val fileName = "${callId}.mp3"
-        
-        Log.d(TAG, "Generated filename: $fileName with callId: $callId")
-        
-        // Get presigned URL
-        lifecycleScope.launch {
-            try {
-                val response = s3Service.getPresignedUrl(fileName, "audio/mp3")
-                
-                if (response.isSuccessful && response.body() != null) {
-                    presignedUrlResponse = response.body()
-                    Log.d(TAG, "Got presigned URL: ${presignedUrlResponse?.uploadURL}")
-                    startRecording(fileName, callId)
-                } else {
-                    Log.e(TAG, "Failed to get presigned URL: ${response.errorBody()?.string()}")
-                    Toast.makeText(
-                        requireContext(),
-                        "Failed to prepare recording",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    binding.progressBar.visibility = View.GONE
-                    binding.btnRecord.isEnabled = true
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error getting presigned URL", e)
-                Toast.makeText(
-                    requireContext(),
-                    "Error preparing recording: ${e.message}",
-                    Toast.LENGTH_SHORT
-                ).show()
-                binding.progressBar.visibility = View.GONE
-                binding.btnRecord.isEnabled = true
-            }
-        }
-    }
-    
-    private fun startRecording(fileName: String, callId: String) {
+    private fun startRecording() {
         try {
-            // Create output file
+            // Create temp file with timestamp
+            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            val tempFileName = "temp_recording_${timestamp}.mp3"
+            
             val recordingsDir = File(
                 requireContext().getExternalFilesDir(Environment.DIRECTORY_MUSIC),
                 "Recordings"
-            )
-            if (!recordingsDir.exists()) {
-                recordingsDir.mkdirs()
-            }
+            ).apply { mkdirs() }
             
-            outputFile = "${recordingsDir.absolutePath}/$fileName"
+            outputFile = "${recordingsDir.absolutePath}/$tempFileName"
             
             // Initialize MediaRecorder
-            mediaRecorder = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                MediaRecorder(requireContext())
-            } else {
-                @Suppress("DEPRECATION")
-                MediaRecorder()
-            }
-            
-            mediaRecorder?.apply {
+            mediaRecorder = MediaRecorder().apply {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
@@ -174,17 +126,10 @@ class RecordFragment : Fragment(), TemplateSelectionListener {
             
             isRecording = true
             updateUI()
+            Log.d(TAG, "Recording started to temp file: $outputFile")
             
-            Log.d(TAG, "Recording started: $outputFile with callId: $callId")
         } catch (e: IOException) {
-            Log.e(TAG, "Failed to start recording", e)
-            Toast.makeText(
-                requireContext(),
-                "Failed to start recording: ${e.message}",
-                Toast.LENGTH_SHORT
-            ).show()
-            binding.progressBar.visibility = View.GONE
-            binding.btnRecord.isEnabled = true
+            handleRecordingError("Failed to start recording: ${e.message}")
         }
     }
     
@@ -198,73 +143,62 @@ class RecordFragment : Fragment(), TemplateSelectionListener {
             isRecording = false
             updateUI()
             
-            Log.d(TAG, "Recording stopped: $outputFile")
-            
-            // Upload the recorded file
+            Log.d(TAG, "Recording stopped. Preparing upload...")
             uploadRecording()
+            
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to stop recording", e)
-            Toast.makeText(
-                requireContext(),
-                "Failed to stop recording: ${e.message}",
-                Toast.LENGTH_SHORT
-            ).show()
-            binding.progressBar.visibility = View.GONE
+            handleRecordingError("Failed to stop recording: ${e.message}")
         }
     }
     
     private fun uploadRecording() {
         val file = outputFile?.let { File(it) }
-        if (file != null && file.exists() && presignedUrlResponse != null) {
-            binding.tvRecordingStatus.text = "Uploading..."
-            binding.tvRecordingStatus.visibility = View.VISIBLE
-            binding.progressBar.visibility = View.VISIBLE
-            binding.btnRecord.isEnabled = false
-            
-            lifecycleScope.launch {
-                val uploadUrl = presignedUrlResponse?.uploadURL ?: ""
-                val success = FileUploader.uploadFile(file, uploadUrl)
-                
-                if (success) {
-                    Log.d(TAG, "File uploaded successfully")
-                    // Directly show template selection after upload
-                    showTemplateSelectionDialog(
-                        presignedUrlResponse?.fileName ?: "",
-                        extractCallId(presignedUrlResponse?.fileName ?: "")
-                    )
-                } else {
-                    Log.e(TAG, "Failed to upload file")
-                    Toast.makeText(
-                        requireContext(),
-                        "Failed to upload recording",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-                
-                binding.tvRecordingStatus.visibility = View.GONE
-                binding.progressBar.visibility = View.GONE
-                binding.btnRecord.isEnabled = true
-            }
-        } else {
-            Log.e(TAG, "File does not exist or presigned URL is null")
-            Toast.makeText(
-                requireContext(),
-                "Error: Recording file not found",
-                Toast.LENGTH_SHORT
-            ).show()
-            binding.progressBar.visibility = View.GONE
-            binding.btnRecord.isEnabled = true
+        if (file == null || !file.exists()) {
+            handleRecordingError("Recording file not found")
+            return
         }
-    }
-    
-    private fun extractCallId(fileName: String): String {
-        // Extract the callId from the fileName
-        // Assuming format: packageId_userId_timestamp_callId.mp3
-        return try {
-            fileName.substringBeforeLast(".").split("_").last()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error extracting callId from fileName: $fileName", e)
-            UUID.randomUUID().toString().take(8) // Fallback to a new random ID
+
+        binding.tvRecordingStatus.text = "Preparing upload..."
+        binding.tvRecordingStatus.visibility = View.VISIBLE
+        binding.progressBar.visibility = View.VISIBLE
+        binding.btnRecord.isEnabled = false
+
+        lifecycleScope.launch {
+            try {
+                // Generate final filename with metadata
+                val userId = sessionManager.getUser()?.userId ?: "anonymous"
+                val packageId = requireContext().packageName
+                val uniqueId = UUID.randomUUID().toString().substring(0, 8)
+                val fileName = "${uniqueId}.mp3"
+
+                // Get presigned URL
+                val presignedResponse = s3Service.getPresignedUrl(fileName, "audio/mp3")
+                if (!presignedResponse.isSuccessful || presignedResponse.body() == null) {
+                    throw Exception("Failed to get upload URL: ${presignedResponse.errorBody()?.string()}")
+                }
+
+                // Upload file
+                val presignedUrl = presignedResponse.body()!!.uploadURL
+                val success = FileUploader.uploadFile(file, presignedUrl)
+
+                if (success) {
+                    Log.d(TAG, "File uploaded successfully as $fileName")
+                    showTemplateSelectionDialog(fileName, uniqueId)
+                } else {
+                    throw Exception("Upload failed with unknown error")
+                }
+            } catch (e: Exception) {
+                handleRecordingError("Upload failed: ${e.message}")
+            } finally {
+                // Clean up temp file
+                file?.delete()
+                
+                withContext(Dispatchers.Main) {
+                    binding.tvRecordingStatus.visibility = View.GONE
+                    binding.progressBar.visibility = View.GONE
+                    binding.btnRecord.isEnabled = true
+                }
+            }
         }
     }
     
@@ -310,6 +244,25 @@ class RecordFragment : Fragment(), TemplateSelectionListener {
             .replace(R.id.fragment_container, fragment)
             .addToBackStack("processed_template")
             .commit()
+    }
+    
+    private fun handleRecordingError(message: String) {
+        Log.e(TAG, message)
+        Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+        binding.progressBar.visibility = View.GONE
+        binding.btnRecord.isEnabled = true
+    }
+    
+    private fun showPermissionRationale() {
+        AlertDialog.Builder(requireContext())
+            .setTitle("Permission Needed")
+            .setMessage("This app needs access to your microphone to record audio.")
+            .setPositiveButton("OK") { _, _ ->
+                requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+            .setNegativeButton("Cancel") { dialog, _ -> dialog.dismiss() }
+            .create()
+            .show()
     }
     
     companion object {
