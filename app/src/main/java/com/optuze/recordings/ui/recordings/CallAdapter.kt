@@ -1,46 +1,99 @@
-package com.optuze.recordings.ui.recordings
-
+import android.content.res.ColorStateList
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
 import com.optuze.recordings.R
 import com.optuze.recordings.data.models.Call
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.concurrent.TimeUnit
+import java.util.TimeZone
 
-class CallAdapter(private val itemClickListener: (Call) -> Unit) : 
-    ListAdapter<Call, CallAdapter.CallViewHolder>(CallDiffCallback()) {
+class CallAdapter(
+    private val onPlayClickListener: (Call) -> Unit,
+    private val onTemplateClickListener: (Call) -> Unit,
+    private val onDeleteClickListener: (Call) -> Unit,
+    private val onTranscriptionChipClickListener: (Call) -> Unit,
+    private val onTemplateChipClickListener: (Call, String) -> Unit
+) : ListAdapter<Call, CallAdapter.CallViewHolder>(CallDiffCallback()) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): CallViewHolder {
-        val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_call, parent, false)
-        return CallViewHolder(view, itemClickListener)
+        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_call, parent, false)
+        return CallViewHolder(view)
     }
 
     override fun onBindViewHolder(holder: CallViewHolder, position: Int) {
-        holder.bind(getItem(position))
+        val call = getItem(position)
+        holder.bind(call)
     }
 
-    class CallViewHolder(
-        itemView: View, 
-        private val itemClickListener: (Call) -> Unit
-    ) : RecyclerView.ViewHolder(itemView) {
-        
-        private val tvTitle: TextView = itemView.findViewById(R.id.tvCallTitle)
+    inner class CallViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val tvDate: TextView = itemView.findViewById(R.id.tvCallDate)
-        private val tvTranscription: TextView = itemView.findViewById(R.id.tvCallTranscription)
-        
+        private val tvRecordingLabel: TextView = itemView.findViewById(R.id.tvRecordingLabel)
+        private val tvDuration: TextView = itemView.findViewById(R.id.tvCallDuration)
+        private val btnPlayAudio: MaterialButton = itemView.findViewById(R.id.btnPlayAudio)
+        private val btnAddTemplate: MaterialButton = itemView.findViewById(R.id.btnAddTemplate)
+        private val btnDelete: MaterialButton = itemView.findViewById(R.id.btnDelete)
+        private val chipGroupAll: ChipGroup = itemView.findViewById(R.id.chipGroupAll)
+
         fun bind(call: Call) {
-            tvTitle.text = "Recording: ${call.callId}"
+            tvDuration.text = call.getFormattedDuration()
             tvDate.text = call.getFormattedDate()
-            tvTranscription.text = call.getShortTranscription()
+            tvRecordingLabel.text = call.getShortTranscription()
+            // Set up chips (transcription first, then templates)
+            setupChips(call)
             
-            itemView.setOnClickListener {
-                itemClickListener(call)
+            // Set up button listeners
+            btnPlayAudio.setOnClickListener { onPlayClickListener(call) }
+            btnAddTemplate.setOnClickListener { onTemplateClickListener(call) }
+            btnDelete.setOnClickListener { onDeleteClickListener(call) }
+        }
+        
+        private fun setupChips(call: Call) {
+            chipGroupAll.removeAllViews()
+            
+            // Add transcription chip first
+            val transcriptionChip = Chip(itemView.context).apply {
+                text = "Transcription"
+                isClickable = true
+                isCheckable = false
+                chipBackgroundColor = ColorStateList.valueOf(
+                    ContextCompat.getColor(context, android.R.color.holo_blue_light)
+                )
+                chipIcon = ContextCompat.getDrawable(context, R.drawable.ic_transcription)
+                setOnClickListener { 
+                    onTranscriptionChipClickListener(call)
+                }
+            }
+            chipGroupAll.addView(transcriptionChip)
+            
+            // Add template chips
+            call.templates?.keys?.forEach { templateName ->
+                val chip = Chip(itemView.context).apply {
+                    text = templateName.capitalize()
+                    isClickable = true
+                    isCheckable = false
+                    setOnClickListener { 
+                        onTemplateChipClickListener(call, templateName)
+                    }
+                }
+                chipGroupAll.addView(chip)
+            }
+            
+            // If no templates, just show the transcription chip
+            if (call.templates.isNullOrEmpty()) {
+                // We already added the transcription chip, so we're good
             }
         }
+
     }
     
     private class CallDiffCallback : DiffUtil.ItemCallback<Call>() {
@@ -51,5 +104,9 @@ class CallAdapter(private val itemClickListener: (Call) -> Unit) :
         override fun areContentsTheSame(oldItem: Call, newItem: Call): Boolean {
             return oldItem == newItem
         }
+    }
+    
+    private fun String.capitalize(): String {
+        return this.split("_").joinToString(" ") { it.replaceFirstChar { char -> char.uppercase() } }
     }
 } 

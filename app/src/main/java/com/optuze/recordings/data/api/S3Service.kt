@@ -9,6 +9,7 @@ interface S3Service {
     @GET("s3/generate-presigned-url")
     suspend fun getPresignedUrl(
         @Query("fileName") fileName: String,
-        @Query("fileType") fileType: String
+        @Query("fileType") fileType: String,
+        @Query("durationSeconds") durationSeconds: Int? = null
     ): Response<PresignedUrlResponse>
 } 

@@ -3,6 +3,7 @@ package com.optuze.recordings
 import android.Manifest
 import android.content.pm.PackageManager
 import android.media.MediaRecorder
+import android.media.MediaMetadataRetriever
 import android.os.Bundle
 import android.os.Environment
 import android.util.Log
@@ -171,8 +172,16 @@ class RecordFragment : Fragment(), TemplateSelectionListener {
                 val uniqueId = UUID.randomUUID().toString().substring(0, 8)
                 val fileName = "${uniqueId}.mp3"
 
-                // Get presigned URL
-                val presignedResponse = s3Service.getPresignedUrl(fileName, "audio/mp3")
+                // Calculate audio duration
+                val durationSeconds = getAudioDurationInSeconds(file.absolutePath)
+
+                // Get presigned URL with duration
+                val presignedResponse = s3Service.getPresignedUrl(
+                    fileName = fileName, 
+                    fileType = "audio/mp3",
+                    durationSeconds = durationSeconds
+                )
+
                 if (!presignedResponse.isSuccessful || presignedResponse.body() == null) {
                     throw Exception("Failed to get upload URL: ${presignedResponse.errorBody()?.string()}")
                 }
@@ -263,6 +272,20 @@ class RecordFragment : Fragment(), TemplateSelectionListener {
             .setNegativeButton("Cancel") { dialog, _ -> dialog.dismiss() }
             .create()
             .show()
+    }
+    
+    private fun getAudioDurationInSeconds(filePath: String): Int {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(filePath)
+            val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+            return (durationStr?.toInt() ?: 0) / 1000 // Convert milliseconds to seconds
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting audio duration", e)
+            return 0
+        } finally {
+            retriever.release()
+        }
     }
     
     companion object {

@@ -1,11 +1,13 @@
 package com.optuze.recordings
 
+import CallAdapter
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -14,8 +16,8 @@ import com.optuze.recordings.data.SessionManager
 import com.optuze.recordings.data.api.CallService
 import com.optuze.recordings.data.models.Call
 import com.optuze.recordings.databinding.FragmentRecordingsBinding
-import com.optuze.recordings.ui.recordings.CallAdapter
 import com.optuze.recordings.ui.templates.ProcessedTemplateFragment
+import com.optuze.recordings.ui.templates.TemplateSelectionDialog
 import com.optuze.recordings.ui.templates.TemplateSelectionListener
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -60,9 +62,23 @@ class RecordingsFragment : Fragment(), TemplateSelectionListener {
     }
     
     private fun setupRecyclerView() {
-        callAdapter = CallAdapter { call ->
-            onCallSelected(call)
-        }
+        callAdapter = CallAdapter(
+            onPlayClickListener = { call ->
+                playRecording(call)
+            },
+            onTemplateClickListener = { call ->
+                showTemplateSelectionDialog(call)
+            },
+            onTemplateChipClickListener = { call, templateName ->
+                showProcessedTemplate(call, templateName)
+            },
+            onTranscriptionChipClickListener = { call ->
+                showTranscription(call)
+            },
+            onDeleteClickListener = { call ->
+                confirmDeleteRecording(call)
+            }
+        )
         
         binding.rvCalls.apply {
             layoutManager = LinearLayoutManager(requireContext())
@@ -127,21 +143,70 @@ class RecordingsFragment : Fragment(), TemplateSelectionListener {
         Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show()
     }
     
-    private fun onCallSelected(call: Call) {
-        // Get the blog template content if available
-        val blogTemplateJson = call.templates?.get("blog")
-        
-        if (blogTemplateJson != null) {
-            // Navigate to processed template fragment
-            val templateName = "Blog"
-            val fragment = ProcessedTemplateFragment.newInstance(templateName, blogTemplateJson)
-            parentFragmentManager.beginTransaction()
-                .replace(R.id.fragment_container, fragment)
-                .addToBackStack(null)
-                .commit()
+    private fun playRecording(call: Call) {
+        // Implement audio playback logic
+        Toast.makeText(requireContext(), "Playing ${call.fileName}", Toast.LENGTH_SHORT).show()
+        // Code to play the audio file from S3 or local cache
+    }
+    
+    private fun showTemplateSelectionDialog(call: Call) {
+        // Show template selection dialog
+        val dialog = TemplateSelectionDialog.newInstance(call.fileName, call.callId)
+        dialog.show(childFragmentManager, "TemplateSelectionDialog")
+    }
+    
+    private fun showProcessedTemplate(call: Call, templateName: String) {
+        // Show the processed template
+        val templateContent = call.templates?.get(templateName)
+        if (templateContent != null) {
+            val displayName = templateName.split("_").joinToString(" ") { 
+                it.replaceFirstChar { char -> char.uppercase() } 
+            }
+            
+            onTemplateProcessed(displayName, templateContent)
         } else {
-            showError("No template content available for this recording")
+            Toast.makeText(requireContext(), "Template content not available", Toast.LENGTH_SHORT).show()
         }
+    }
+    
+    private fun confirmDeleteRecording(call: Call) {
+        AlertDialog.Builder(requireContext())
+            .setTitle("Delete Recording")
+            .setMessage("Are you sure you want to delete this recording?")
+            .setPositiveButton("Delete") { _, _ ->
+                deleteRecording(call)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun deleteRecording(call: Call) {
+        // Implementation for deleting the recording
+        // This would involve an API call to your backend
+        Toast.makeText(requireContext(), "Deleting recording...", Toast.LENGTH_SHORT).show()
+        
+        // Example implementation:
+        /*
+        lifecycleScope.launch {
+            try {
+                val response = callService.deleteCall(call.callId)
+                if (response.isSuccessful && response.body()?.success == true) {
+                    // Remove from list
+                    val updatedList = calls.filterNot { it.callId == call.callId }
+                    calls.clear()
+                    calls.addAll(updatedList)
+                    callAdapter.submitList(calls.toList())
+                    
+                    // Show success message
+                    Toast.makeText(requireContext(), "Recording deleted", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(requireContext(), "Failed to delete recording", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(requireContext(), "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+        */
     }
     
     override fun onDestroyView() {
@@ -155,5 +220,14 @@ class RecordingsFragment : Fragment(), TemplateSelectionListener {
             .replace(R.id.fragment_container, fragment)
             .addToBackStack(null)
             .commit()
+    }
+    
+    private fun showTranscription(call: Call) {
+        // Create a dialog to show the full transcription
+        AlertDialog.Builder(requireContext())
+            .setTitle("Transcription")
+            .setMessage(call.transcription ?: "No transcription available")
+            .setPositiveButton("Close", null)
+            .show()
     }
 } 
