@@ -31,6 +31,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
+import java.time.Instant
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
@@ -166,10 +167,7 @@ class RecordFragment : Fragment(), TemplateSelectionListener {
 
         lifecycleScope.launch {
             try {
-                // Generate final filename with metadata
-                val userId = sessionManager.getUser()?.userId ?: "anonymous"
-                val packageId = requireContext().packageName
-                val uniqueId = UUID.randomUUID().toString().substring(0, 8)
+                val uniqueId = "${Instant.now().epochSecond}_${UUID.randomUUID().toString().substring(0, 8)}"
                 val fileName = "${uniqueId}.mp3"
 
                 // Calculate audio duration
