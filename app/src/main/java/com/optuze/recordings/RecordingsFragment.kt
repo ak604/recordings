@@ -184,9 +184,7 @@ class RecordingsFragment : Fragment(), TemplateSelectionListener {
         // Implementation for deleting the recording
         // This would involve an API call to your backend
         Toast.makeText(requireContext(), "Deleting recording...", Toast.LENGTH_SHORT).show()
-        
-        // Example implementation:
-        /*
+
         lifecycleScope.launch {
             try {
                 val response = callService.deleteCall(call.callId)
@@ -206,7 +204,7 @@ class RecordingsFragment : Fragment(), TemplateSelectionListener {
                 Toast.makeText(requireContext(), "Error: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
-        */
+
     }
     
     override fun onDestroyView() {
