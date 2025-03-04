@@ -1,6 +1,8 @@
 package com.optuze.recordings
 
 import CallAdapter
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
@@ -33,6 +35,9 @@ class RecordingsFragment : Fragment(), TemplateSelectionListener {
     private var nextToken: String? = null
     private var isLoading = false
     private val calls = mutableListOf<Call>()
+    
+    private var mediaPlayer: MediaPlayer? = null
+    private var currentlyPlayingCallId: String? = null
     
     companion object {
         private const val TAG = "RecordingsFragment"
@@ -144,9 +149,89 @@ class RecordingsFragment : Fragment(), TemplateSelectionListener {
     }
     
     private fun playRecording(call: Call) {
-        // Implement audio playback logic
-        Toast.makeText(requireContext(), "Playing ${call.fileName}", Toast.LENGTH_SHORT).show()
-        // Code to play the audio file from S3 or local cache
+        // Check if already playing this call
+        if (currentlyPlayingCallId == call.callId && mediaPlayer?.isPlaying == true) {
+            // Pause playback
+            mediaPlayer?.pause()
+            Toast.makeText(requireContext(), "Paused", Toast.LENGTH_SHORT).show()
+            return
+        } else if (currentlyPlayingCallId == call.callId && mediaPlayer != null) {
+            // Resume playback
+            mediaPlayer?.start()
+            Toast.makeText(requireContext(), "Resuming playback", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        // Show loading indicator
+        val loadingDialog = AlertDialog.Builder(requireContext())
+            .setTitle("Loading")
+            .setMessage("Preparing audio...")
+            .setCancelable(false)
+            .create()
+        
+        loadingDialog.show()
+        
+        // Release previous MediaPlayer if exists
+        mediaPlayer?.release()
+        mediaPlayer = null
+        
+        // Get download URL and play audio
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val response = NetworkModule.createS3Service(sessionManager).getDownloadUrl(call.callId)
+                
+                if (response.isSuccessful && response.body()?.success == true) {
+                    val downloadUrl = response.body()?.data?.downloadURL
+                    
+                    if (downloadUrl != null) {
+                        // Create a new MediaPlayer instance and assign it to the class property
+                        mediaPlayer = MediaPlayer().apply {
+                            setAudioAttributes(
+                                AudioAttributes.Builder()
+                                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                                    .build()
+                            )
+                            
+                            setDataSource(downloadUrl)
+                            
+                            setOnPreparedListener {
+                                loadingDialog.dismiss()
+                                start()
+                                currentlyPlayingCallId = call.callId
+                                callAdapter.setCurrentlyPlayingCallId(call.callId)
+                                Toast.makeText(requireContext(), "Playing audio", Toast.LENGTH_SHORT).show()
+                            }
+                            
+                            setOnCompletionListener {
+                                currentlyPlayingCallId = null
+                                callAdapter.setCurrentlyPlayingCallId(null)
+                            }
+                            
+                            setOnErrorListener { _, _, _ ->
+                                loadingDialog.dismiss()
+                                Toast.makeText(requireContext(), "Error playing audio", Toast.LENGTH_SHORT).show()
+                                true
+                            }
+                            
+                            // Start preparing asynchronously
+                            prepareAsync()
+                        }
+                    } else {
+                        loadingDialog.dismiss()
+                        Toast.makeText(requireContext(), "Download URL is null", Toast.LENGTH_LONG).show()
+                    }
+                } else {
+                    loadingDialog.dismiss()
+                    val errorMessage = response.errorBody()?.string() ?: "Failed to get download URL"
+                    Toast.makeText(requireContext(), errorMessage, Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                loadingDialog.dismiss()
+                Log.e(TAG, "Error getting download URL", e)
+                Toast.makeText(requireContext(), "Error: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
     }
     
     private fun showTemplateSelectionDialog(call: Call) {
@@ -209,7 +294,16 @@ class RecordingsFragment : Fragment(), TemplateSelectionListener {
     
     override fun onDestroyView() {
         super.onDestroyView()
+        
+        // Release MediaPlayer resources
+        mediaPlayer?.release()
+        mediaPlayer = null
+        currentlyPlayingCallId = null
+        
         _binding = null
+        
+        // Reset playback state in adapter
+        callAdapter.setCurrentlyPlayingCallId(null)
     }
     
     override fun onTemplateProcessed(templateName: String, templateContent: String) {

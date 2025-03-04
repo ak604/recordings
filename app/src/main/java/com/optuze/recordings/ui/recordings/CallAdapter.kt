@@ -25,6 +25,8 @@ class CallAdapter(
     private val onTemplateChipClickListener: (Call, String) -> Unit
 ) : ListAdapter<Call, CallAdapter.CallViewHolder>(CallDiffCallback()) {
 
+    private var currentlyPlayingCallId: String? = null
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): CallViewHolder {
         val view = LayoutInflater.from(parent.context).inflate(R.layout.item_call, parent, false)
         return CallViewHolder(view)
@@ -33,6 +35,27 @@ class CallAdapter(
     override fun onBindViewHolder(holder: CallViewHolder, position: Int) {
         val call = getItem(position)
         holder.bind(call)
+    }
+
+    fun setCurrentlyPlayingCallId(callId: String?) {
+        val oldPlayingCallId = currentlyPlayingCallId
+        currentlyPlayingCallId = callId
+        
+        // Update UI for previously playing item (if any)
+        if (oldPlayingCallId != null) {
+            val oldPosition = currentList.indexOfFirst { it.callId == oldPlayingCallId }
+            if (oldPosition >= 0) {
+                notifyItemChanged(oldPosition)
+            }
+        }
+        
+        // Update UI for currently playing item (if any)
+        if (callId != null) {
+            val newPosition = currentList.indexOfFirst { it.callId == callId }
+            if (newPosition >= 0) {
+                notifyItemChanged(newPosition)
+            }
+        }
     }
 
     inner class CallViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
@@ -55,6 +78,13 @@ class CallAdapter(
             btnPlayAudio.setOnClickListener { onPlayClickListener(call) }
             btnAddTemplate.setOnClickListener { onTemplateClickListener(call) }
             btnDelete.setOnClickListener { onDeleteClickListener(call) }
+            
+            // Update play button appearance based on playback state
+            if (call.callId == currentlyPlayingCallId) {
+                btnPlayAudio.setIconResource(android.R.drawable.ic_media_pause)
+            } else {
+                btnPlayAudio.setIconResource(android.R.drawable.ic_media_play)
+            }
         }
         
         private fun setupChips(call: Call) {
