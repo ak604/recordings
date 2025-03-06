@@ -44,6 +44,7 @@ class RecordFragment : Fragment(), TemplateSelectionListener {
     private var isRecording = false
     private var outputFile: String? = null
     private var presignedUrlResponse: PresignedUrlResponse? = null
+    private var audioFile: File? = null
     
     private lateinit var sessionManager: SessionManager
     private lateinit var s3Service: S3Service
@@ -84,6 +85,10 @@ class RecordFragment : Fragment(), TemplateSelectionListener {
                 checkPermissionAndRecord()
             }
         }
+
+        binding.btnDiscard.setOnClickListener { discardRecording() }
+        binding.btnConvert.setOnClickListener { prepareAndUploadForConversion() }
+        binding.btnFinish.setOnClickListener { uploadWithoutTemplates() }
     }
     
     private fun checkPermissionAndRecord() {
@@ -143,39 +148,105 @@ class RecordFragment : Fragment(), TemplateSelectionListener {
             }
             mediaRecorder = null
             isRecording = false
-            updateUI()
             
-            Log.d(TAG, "Recording stopped. Preparing upload...")
-            uploadRecording()
+            // Store reference to the audio file
+            audioFile = outputFile?.let { File(it) }
+            if (audioFile == null || !audioFile!!.exists()) {
+                handleRecordingError("Recording file not found")
+                return
+            }
+            
+            // Just update UI to show buttons - no upload here
+            updateUI()
+            Log.d(TAG, "Recording stopped successfully")
             
         } catch (e: Exception) {
             handleRecordingError("Failed to stop recording: ${e.message}")
         }
     }
     
-    private fun uploadRecording() {
-        val file = outputFile?.let { File(it) }
-        if (file == null || !file.exists()) {
+    private fun updateUI() {
+        if (isRecording) {
+            // During recording
+            binding.btnRecord.setImageResource(R.drawable.ic_stop)
+            binding.tvRecordingStatus.text = "Recording..."
+            binding.tvRecordingStatus.visibility = View.VISIBLE
+            binding.progressBar.visibility = View.GONE
+            
+            // Hide action buttons
+            binding.btnDiscard.visibility = View.GONE
+            binding.btnConvert.visibility = View.GONE
+            binding.btnFinish.visibility = View.GONE
+            
+        } else if (audioFile != null) {
+            // After recording is stopped
+            binding.btnRecord.setImageResource(R.drawable.ic_record)
+            binding.tvRecordingStatus.text = "Recording completed"
+            binding.tvRecordingStatus.visibility = View.VISIBLE
+            binding.progressBar.visibility = View.GONE
+            
+            // Show action buttons
+            binding.btnDiscard.visibility = View.VISIBLE
+            binding.btnConvert.visibility = View.VISIBLE
+            binding.btnFinish.visibility = View.VISIBLE
+            
+        } else {
+            // Initial or reset state
+            binding.btnRecord.setImageResource(R.drawable.ic_record)
+            binding.tvRecordingStatus.visibility = View.GONE
+            binding.progressBar.visibility = View.GONE
+            
+            // Hide action buttons
+            binding.btnDiscard.visibility = View.GONE
+            binding.btnConvert.visibility = View.GONE
+            binding.btnFinish.visibility = View.GONE
+        }
+        binding.btnRecord.isEnabled = true
+    }
+    
+    private fun discardRecording() {
+        audioFile?.delete()
+        audioFile = null
+        outputFile = null
+        resetUI()
+        Toast.makeText(requireContext(), "Recording discarded", Toast.LENGTH_SHORT).show()
+    }
+    
+    private fun prepareAndUploadForConversion() {
+        if (audioFile == null || !audioFile!!.exists()) {
             handleRecordingError("Recording file not found")
             return
         }
-
+        uploadRecording(true)  // Upload with template selection
+    }
+    
+    private fun uploadWithoutTemplates() {
+        if (audioFile == null || !audioFile!!.exists()) {
+            handleRecordingError("Recording file not found")
+            return
+        }
+        uploadRecording(false)  // Upload without template selection
+    }
+    
+    private fun uploadRecording(showTemplates: Boolean) {
+        // Show loading state
         binding.tvRecordingStatus.text = "Preparing upload..."
-        binding.tvRecordingStatus.visibility = View.VISIBLE
         binding.progressBar.visibility = View.VISIBLE
         binding.btnRecord.isEnabled = false
+        
+        // Hide action buttons during upload
+        binding.btnDiscard.visibility = View.GONE
+        binding.btnConvert.visibility = View.GONE
+        binding.btnFinish.visibility = View.GONE
 
         lifecycleScope.launch {
             try {
                 val uniqueId = "${Instant.now().epochSecond}_${UUID.randomUUID().toString().substring(0, 8)}"
                 val fileName = "${uniqueId}.mp3"
+                val durationSeconds = getAudioDurationInSeconds(audioFile!!.absolutePath)
 
-                // Calculate audio duration
-                val durationSeconds = getAudioDurationInSeconds(file.absolutePath)
-
-                // Get presigned URL with duration
                 val presignedResponse = s3Service.getPresignedUrl(
-                    fileName = fileName, 
+                    fileName = fileName,
                     fileType = "audio/mp3",
                     durationSeconds = durationSeconds
                 )
@@ -184,43 +255,36 @@ class RecordFragment : Fragment(), TemplateSelectionListener {
                     throw Exception("Failed to get upload URL: ${presignedResponse.errorBody()?.string()}")
                 }
 
-                // Upload file
-                val presignedUrl = presignedResponse.body()!!.uploadURL
-                val success = FileUploader.uploadFile(file, presignedUrl)
+                val success = FileUploader.uploadFile(audioFile!!, presignedResponse.body()!!.uploadURL)
 
                 if (success) {
-                    Log.d(TAG, "File uploaded successfully as $fileName")
-                    showTemplateSelectionDialog(fileName, uniqueId)
+                    if (showTemplates) {
+                        // Show template selection dialog for Convert flow
+                        showTemplateSelectionDialog(fileName, uniqueId)
+                    } else {
+                        // Direct upload for Finish flow
+                        Toast.makeText(requireContext(), "Recording uploaded successfully", Toast.LENGTH_SHORT).show()
+                        parentFragmentManager.popBackStack()
+                    }
                 } else {
-                    throw Exception("Upload failed with unknown error")
+                    throw Exception("Upload failed")
                 }
             } catch (e: Exception) {
                 handleRecordingError("Upload failed: ${e.message}")
             } finally {
-                // Clean up temp file
-                file?.delete()
-                
-                withContext(Dispatchers.Main) {
-                    binding.tvRecordingStatus.visibility = View.GONE
-                    binding.progressBar.visibility = View.GONE
-                    binding.btnRecord.isEnabled = true
-                }
+                // Cleanup
+                audioFile?.delete()
+                audioFile = null
+                outputFile = null
+                resetUI()
             }
         }
     }
     
-    private fun updateUI() {
-        binding.progressBar.visibility = View.GONE
-        binding.btnRecord.isEnabled = true
-        
-        if (isRecording) {
-            binding.btnRecord.setImageResource(R.drawable.ic_stop)
-            binding.tvRecordingStatus.text = "Recording..."
-            binding.tvRecordingStatus.visibility = View.VISIBLE
-        } else {
-            binding.btnRecord.setImageResource(R.drawable.ic_record)
-            binding.tvRecordingStatus.visibility = View.GONE
-        }
+    private fun resetUI() {
+        audioFile = null
+        outputFile = null
+        updateUI()
     }
     
     private fun showTemplateSelectionDialog(fileName: String, callId: String) {
