@@ -5,5 +5,6 @@ data class Template(
     val title: String,
     val description: String,
     val iconResId: Int,
-    val colorResId: Int
+    val colorResId: Int,
+    val templateName: String
 ) 

@@ -80,49 +80,56 @@ class TemplateSelectionDialog : DialogFragment() {
                 title = "Quick Memo",
                 description = "Create a quick note or memo",
                 iconResId = R.drawable.ic_memo,
-                colorResId = R.color.template_memo
+                colorResId = R.color.template_memo,
+                templateName = "memo"
             ),
             Template(
                 id = 2,
                 title = "Summary",
                 description = "Generate a concise summary",
                 iconResId = R.drawable.ic_summary,
-                colorResId = R.color.template_summary
+                colorResId = R.color.template_summary,
+                templateName = "summary"
             ),
             Template(
                 id = 3,
                 title = "Casual Email",
                 description = "Write a friendly, informal email",
                 iconResId = R.drawable.ic_email_casual,
-                colorResId = R.color.template_email_casual
+                colorResId = R.color.template_email_casual,
+                templateName = "casual_email"
             ),
             Template(
                 id = 4,
                 title = "Formal Email",
                 description = "Compose a professional business email",
                 iconResId = R.drawable.ic_email_formal,
-                colorResId = R.color.template_email_formal
+                colorResId = R.color.template_email_formal,
+                templateName = "formal_email"
             ),
             Template(
                 id = 5,
                 title = "Tweet",
                 description = "Create an engaging tweet",
                 iconResId = R.drawable.ic_twitter,
-                colorResId = R.color.template_twitter
+                colorResId = R.color.template_twitter,
+                templateName = "tweet"
             ),
             Template(
                 id = 6,
                 title = "LinkedIn Post",
                 description = "Write a professional social media post",
                 iconResId = R.drawable.ic_linkedin,
-                colorResId = R.color.template_linkedin
+                colorResId = R.color.template_linkedin,
+                templateName = "linkedin_post"
             ),
             Template(
                 id = 7,
                 title = "Blog",
                 description = "Draft a blog post or article",
                 iconResId = R.drawable.ic_blog,
-                colorResId = R.color.template_blog
+                colorResId = R.color.template_blog,
+                templateName = "blog"
             )
         )
         
@@ -133,7 +140,7 @@ class TemplateSelectionDialog : DialogFragment() {
         binding.progressBar.visibility = View.VISIBLE
         
         val contextId = requireContext().packageName
-        val templateName = template.title.lowercase().replace(" ", "_")
+        val templateName = template.templateName
         
         lifecycleScope.launch {
             try {
