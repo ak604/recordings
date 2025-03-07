@@ -14,4 +14,5 @@
     <color name="template_twitter">#03A9F4</color>
     <color name="template_linkedin">#0288D1</color>
     <color name="template_blog">#9C27B0</color>
+    <color name="gold">#FFD700</color>
 </resources>

@@ -4,6 +4,7 @@ import android.util.Log
 import com.optuze.recordings.data.api.S3Service
 import com.optuze.recordings.data.api.TemplateService
 import com.optuze.recordings.data.api.CallService
+import com.optuze.recordings.data.api.AppConfigService
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -69,6 +70,12 @@ object NetworkModule {
         val client = createAuthenticatedClient(sessionManager)
         val retrofit = createRetrofit(client)
         return retrofit.create(CallService::class.java)
+    }
+
+    fun createAppConfigService(sessionManager: SessionManager): AppConfigService {
+        val client = createAuthenticatedClient(sessionManager)
+        val retrofit = createRetrofit(client)
+        return retrofit.create(AppConfigService::class.java)
     }
 
 } 

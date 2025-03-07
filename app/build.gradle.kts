@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
+    id("kotlin-kapt")
 }
 
 android {
@@ -61,4 +62,9 @@ dependencies {
 
     // Update RecyclerView to latest version
     implementation("androidx.recyclerview:recyclerview:1.3.2")
+
+    // Add Glide dependencies here
+    implementation("com.github.bumptech.glide:glide:4.14.2")
+    kapt("com.github.bumptech.glide:compiler:4.14.2")
+
 }

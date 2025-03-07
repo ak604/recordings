@@ -21,6 +21,7 @@ import com.optuze.recordings.data.NetworkModule
 import com.optuze.recordings.data.SessionManager
 import com.optuze.recordings.data.api.S3Service
 import com.optuze.recordings.data.models.PresignedUrlResponse
+import com.optuze.recordings.data.AppConfigManager
 import com.optuze.recordings.databinding.FragmentRecordBinding
 import com.optuze.recordings.ui.templates.ProcessedTemplateFragment
 import com.optuze.recordings.ui.templates.TemplateSelectionDialog
@@ -87,8 +88,8 @@ class RecordFragment : Fragment(), TemplateSelectionListener {
         }
 
         binding.btnDiscard.setOnClickListener { discardRecording() }
-        binding.btnConvert.setOnClickListener { prepareAndUploadForConversion() }
-        binding.btnFinish.setOnClickListener { uploadWithoutTemplates() }
+        binding.btnConvertContainer.setOnClickListener { prepareAndUploadForConversion() }
+        binding.btnFinishContainer.setOnClickListener { uploadWithoutTemplates() }
     }
     
     private fun checkPermissionAndRecord() {
@@ -166,42 +167,47 @@ class RecordFragment : Fragment(), TemplateSelectionListener {
     }
     
     private fun updateUI() {
+        binding.progressBar.visibility = View.GONE
+        binding.btnRecord.isEnabled = true
+        
         if (isRecording) {
-            // During recording
+            // Recording in progress
             binding.btnRecord.setImageResource(R.drawable.ic_stop)
             binding.tvRecordingStatus.text = "Recording..."
             binding.tvRecordingStatus.visibility = View.VISIBLE
-            binding.progressBar.visibility = View.GONE
             
-            // Hide action buttons
+            // Hide action buttons and costs
             binding.btnDiscard.visibility = View.GONE
-            binding.btnConvert.visibility = View.GONE
-            binding.btnFinish.visibility = View.GONE
+            binding.btnConvertContainer.visibility = View.GONE
+            binding.btnFinishContainer.visibility = View.GONE
+            binding.layoutConvertCost.visibility = View.GONE
+            binding.layoutFinishCost.visibility = View.GONE
             
         } else if (audioFile != null) {
-            // After recording is stopped
+            // Recording completed, show action buttons
             binding.btnRecord.setImageResource(R.drawable.ic_record)
             binding.tvRecordingStatus.text = "Recording completed"
             binding.tvRecordingStatus.visibility = View.VISIBLE
-            binding.progressBar.visibility = View.GONE
             
-            // Show action buttons
+            // Show action buttons and costs
             binding.btnDiscard.visibility = View.VISIBLE
-            binding.btnConvert.visibility = View.VISIBLE
-            binding.btnFinish.visibility = View.VISIBLE
+            binding.btnConvertContainer.visibility = View.VISIBLE
+            binding.btnFinishContainer.visibility = View.VISIBLE
+            binding.layoutConvertCost.visibility = View.VISIBLE
+            binding.layoutFinishCost.visibility = View.VISIBLE
             
         } else {
-            // Initial or reset state
+            // Initial state
             binding.btnRecord.setImageResource(R.drawable.ic_record)
             binding.tvRecordingStatus.visibility = View.GONE
-            binding.progressBar.visibility = View.GONE
             
-            // Hide action buttons
+            // Hide action buttons and costs
             binding.btnDiscard.visibility = View.GONE
-            binding.btnConvert.visibility = View.GONE
-            binding.btnFinish.visibility = View.GONE
+            binding.btnConvertContainer.visibility = View.GONE
+            binding.btnFinishContainer.visibility = View.GONE
+            binding.layoutConvertCost.visibility = View.GONE
+            binding.layoutFinishCost.visibility = View.GONE
         }
-        binding.btnRecord.isEnabled = true
     }
     
     private fun discardRecording() {
@@ -236,8 +242,8 @@ class RecordFragment : Fragment(), TemplateSelectionListener {
         
         // Hide action buttons during upload
         binding.btnDiscard.visibility = View.GONE
-        binding.btnConvert.visibility = View.GONE
-        binding.btnFinish.visibility = View.GONE
+        binding.btnConvertContainer.visibility = View.GONE
+        binding.btnFinishContainer.visibility = View.GONE
 
         lifecycleScope.launch {
             try {
@@ -276,7 +282,10 @@ class RecordFragment : Fragment(), TemplateSelectionListener {
                 audioFile?.delete()
                 audioFile = null
                 outputFile = null
-                resetUI()
+                
+                withContext(Dispatchers.Main) {
+                    updateUI()
+                }
             }
         }
     }
@@ -348,6 +357,18 @@ class RecordFragment : Fragment(), TemplateSelectionListener {
         } finally {
             retriever.release()
         }
+    }
+    
+    private fun updateButtonCosts(durationSeconds: Int) {
+        val tokenName = AppConfigManager.getTokenName()
+        val tokenCost = AppConfigManager.calculateTokenCost(durationSeconds)
+        
+        // Update cost labels with just the number
+        binding.tvConvertCost.text = tokenCost.toString()
+        binding.tvFinishCost.text = tokenCost.toString()
+        
+        // Log the cost for debugging
+        Log.d(TAG, "Token cost for duration $durationSeconds seconds: $tokenCost $tokenName")
     }
     
     companion object {

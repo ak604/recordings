@@ -6,6 +6,8 @@ import androidx.fragment.app.Fragment
 import com.optuze.recordings.databinding.ActivityMainBinding
 import com.optuze.recordings.ui.templates.ProcessedTemplateFragment
 import com.optuze.recordings.ui.templates.TemplateSelectionListener
+import com.optuze.recordings.data.AppConfigManager
+import com.optuze.recordings.data.SessionManager
 
 class MainActivity : AppCompatActivity(), TemplateSelectionListener {
 
@@ -15,6 +17,12 @@ class MainActivity : AppCompatActivity(), TemplateSelectionListener {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Initialize session manager
+        val sessionManager = SessionManager(this)
+        
+        // Load app config data
+        AppConfigManager.loadAppConfig(sessionManager)
 
         // Set default fragment
         if (savedInstanceState == null) {
