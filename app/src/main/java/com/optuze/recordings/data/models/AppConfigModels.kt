@@ -7,7 +7,9 @@ data class AppLoadResponse(
 
 data class AppLoadData(
     val user: UserProfile,
-    val app: AppConfig
+    val app: AppConfig,
+    val userRewards: List<UserReward>? = null,
+    val rewardsApplied: Boolean = false
 )
 
 data class UserProfile(
@@ -17,10 +19,20 @@ data class UserProfile(
     val picture: String,
     val accessLevel: String,
     val wallet: Wallet,
+    val lastRewardTime: String? = null,
     val createdAt: String
 )
 
 data class Wallet(
+    val gold: Int
+)
+
+data class UserReward(
+    val rewardId: String,
+    val tokens: RewardTokens
+)
+
+data class RewardTokens(
     val gold: Int
 )
 

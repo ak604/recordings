@@ -66,6 +66,17 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/tvWalletLabel" />
 
+    <TextView
+        android:id="@+id/tvLastReward"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textSize="14sp"
+        android:textColor="#757575"
+        android:visibility="gone"
+        app:layout_constraintStart_toStartOf="@id/tvWalletGold"
+        app:layout_constraintTop_toBottomOf="@id/tvWalletGold" />
+
     <Button
         android:id="@+id/btnRefresh"
         android:layout_width="wrap_content"

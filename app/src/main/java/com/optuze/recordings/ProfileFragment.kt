@@ -15,6 +15,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.*
 
 class ProfileFragment : Fragment() {
     private var _binding: FragmentProfileBinding? = null
@@ -51,6 +53,23 @@ class ProfileFragment : Fragment() {
             
             // Format wallet display with gold coin icon
             binding.tvWalletGold.text = "${userProfile.wallet.gold} Gold"
+            
+            // Show last reward time if available
+            userProfile.lastRewardTime?.let { lastRewardTime ->
+                try {
+                    val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.getDefault())
+                    dateFormat.timeZone = TimeZone.getTimeZone("UTC")
+                    val date = dateFormat.parse(lastRewardTime)
+                    
+                    val displayFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
+                    binding.tvLastReward.text = "Last Reward: ${displayFormat.format(date)}"
+                    binding.tvLastReward.visibility = View.VISIBLE
+                } catch (e: Exception) {
+                    binding.tvLastReward.visibility = View.GONE
+                }
+            } ?: run {
+                binding.tvLastReward.visibility = View.GONE
+            }
             
             // Load profile picture with Glide
             Glide.with(this)

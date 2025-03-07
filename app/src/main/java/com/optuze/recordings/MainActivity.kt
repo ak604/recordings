@@ -1,6 +1,7 @@
 package com.optuze.recordings
 
 import android.os.Bundle
+import android.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
 import com.optuze.recordings.databinding.ActivityMainBinding
@@ -8,6 +9,11 @@ import com.optuze.recordings.ui.templates.ProcessedTemplateFragment
 import com.optuze.recordings.ui.templates.TemplateSelectionListener
 import com.optuze.recordings.data.AppConfigManager
 import com.optuze.recordings.data.SessionManager
+import com.optuze.recordings.data.models.UserReward
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
+import androidx.lifecycle.lifecycleScope
+import android.util.Log
 
 class MainActivity : AppCompatActivity(), TemplateSelectionListener {
 
@@ -40,6 +46,9 @@ class MainActivity : AppCompatActivity(), TemplateSelectionListener {
             loadFragment(fragment)
             true
         }
+
+        // Setup reward observer
+        setupRewardObserver()
     }
 
     private fun loadFragment(fragment: Fragment) {
@@ -55,5 +64,39 @@ class MainActivity : AppCompatActivity(), TemplateSelectionListener {
             .replace(R.id.fragment_container, fragment)
             .addToBackStack("main_processed_template")
             .commit()
+    }
+
+    private fun setupRewardObserver() {
+
+        lifecycleScope.launch {
+            AppConfigManager.rewardsFlow.collect { rewards ->
+                // Only show rewards if:
+                // 1. Rewards are not null (meaning we've loaded them)
+                // 2. Rewards are not empty
+                // 3. We haven't shown rewards this session already
+                if (!rewards.isNullOrEmpty()) {
+                    showRewardDialog(rewards)
+                }
+            }
+        }
+    }
+
+    private fun showRewardDialog(rewards: List<UserReward>) {
+        // Calculate total reward
+        val totalGold = rewards.sumOf { it.tokens.gold }
+        
+        if (totalGold > 0) {
+            Log.d("Rewards", "Showing reward dialog for $totalGold gold")
+            
+            // Create and show reward dialog
+            val dialog = AlertDialog.Builder(this)
+                .setTitle("Daily Rewards!")
+                .setMessage("You've received $totalGold gold as daily rewards!")
+                .setIcon(R.drawable.ic_gold_coin)
+                .setPositiveButton("Awesome!") { dialog, _ -> dialog.dismiss() }
+                .create()
+            
+            dialog.show()
+        }
     }
 } 
