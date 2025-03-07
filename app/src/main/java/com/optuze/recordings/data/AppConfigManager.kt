@@ -20,6 +20,12 @@ object AppConfigManager {
     private val _rewardsFlow = MutableStateFlow<List<UserReward>?>(null)
     val rewardsFlow: StateFlow<List<UserReward>?> = _rewardsFlow
     
+    // Add this property to track shown rewards
+    private var rewardsShownIds = mutableSetOf<String>()
+    
+    // Add this property to track shown reward timestamps
+    private var rewardShownTimestamps = mutableMapOf<String, Long>()
+    
     fun loadAppConfig(sessionManager: SessionManager) {
         val appConfigService = NetworkModule.createAppConfigService(sessionManager)
         
@@ -32,8 +38,22 @@ object AppConfigManager {
                     // Process rewards only if they exist AND rewardsApplied is true
                     val rewards = appData?.userRewards
                     if (!rewards.isNullOrEmpty() && appData?.rewardsApplied == true) {
-                        _rewardsFlow.value = rewards
-                        Log.d(TAG, "Received ${rewards.size} rewards: ${rewards.map { it.rewardId }}")
+                        val now = System.currentTimeMillis()
+                        val newRewards = rewards.filter { 
+                            // Check both ID and timestamp (60 second cooldown)
+                            val lastShown = rewardShownTimestamps[it.rewardId] ?: 0
+                            !rewardsShownIds.contains(it.rewardId) && (now - lastShown > 60000)
+                        }
+                        
+                        if (newRewards.isNotEmpty()) {
+                            _rewardsFlow.value = newRewards
+                            newRewards.forEach {
+                                rewardsShownIds.add(it.rewardId)
+                                rewardShownTimestamps[it.rewardId] = now
+                            }
+                        } else {
+                            _rewardsFlow.value = emptyList()
+                        }
                     } else {
                         // Set explicitly to empty list (not null) to indicate rewards were checked but none available
                         _rewardsFlow.value = emptyList()
@@ -84,5 +104,16 @@ object AppConfigManager {
             // Take the minimum of these values (the least expensive applicable threshold)
             applicableThresholds.minByOrNull { it[0] }?.get(1) ?: 0
         }
+    }
+    
+    fun clearShownRewards() {
+        // Clear the flow value
+        _rewardsFlow.value = emptyList()
+        
+        // Clear tracking data
+        rewardsShownIds.clear()
+        rewardShownTimestamps.clear()
+        
+        Log.d(TAG, "Cleared shown rewards tracking data")
     }
 } 

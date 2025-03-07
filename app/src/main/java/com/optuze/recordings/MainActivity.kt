@@ -67,15 +67,12 @@ class MainActivity : AppCompatActivity(), TemplateSelectionListener {
     }
 
     private fun setupRewardObserver() {
-
         lifecycleScope.launch {
             AppConfigManager.rewardsFlow.collect { rewards ->
-                // Only show rewards if:
-                // 1. Rewards are not null (meaning we've loaded them)
-                // 2. Rewards are not empty
-                // 3. We haven't shown rewards this session already
                 if (!rewards.isNullOrEmpty()) {
                     showRewardDialog(rewards)
+                    // Clear the rewards after showing to prevent duplicates
+                    AppConfigManager.clearShownRewards()
                 }
             }
         }
